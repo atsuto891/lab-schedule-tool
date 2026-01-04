@@ -289,25 +289,45 @@ export default function Home() {
 
   const calculateOptimalDates = (event) => {
     const results = [];
-    
+
+    // 先生が他イベントで×と回答した時間帯を収集
+    const teacherUnavailableSlots = new Set();
+    events.forEach(e => {
+      Object.values(e.responses).forEach(response => {
+        if (response.userRole === 'teacher') {
+          Object.entries(response.answers || {}).forEach(([key, value]) => {
+            if (value === false) {
+              teacherUnavailableSlots.add(key);
+            }
+          });
+        }
+      });
+    });
+
     const responses = Object.values(event.responses);
     const teachers = responses.filter(r => r.userRole === 'teacher');
-    const targetStudents = responses.filter(r => 
+    const targetStudents = responses.filter(r =>
       r.userRole === 'student' && event.targetGrades.includes(r.userGrade)
     );
-    
+
     event.candidateDates.forEach(date => {
       event.timeSlots.forEach(slot => {
         const key = `${date}_${slot}`;
-        
+
+        // 先生が×と回答した時間帯かどうか
+        const isTeacherUnavailable = teacherUnavailableSlots.has(key);
+
         const availableTeachers = teachers.filter(t => t.answers[key] === true);
         const availableStudents = targetStudents.filter(s => s.answers[key] === true);
-        
-        const studentRatio = targetStudents.length > 0 
-          ? availableStudents.length / targetStudents.length 
+
+        const studentRatio = targetStudents.length > 0
+          ? availableStudents.length / targetStudents.length
           : 0;
         const studentCondition = studentRatio >= 0.8;
-        
+
+        // 先生が×の時間帯は候補から除外
+        const meetsCriteria = studentCondition && !isTeacherUnavailable;
+
         results.push({
           date,
           slot,
@@ -317,29 +337,30 @@ export default function Home() {
           totalTargetStudents: targetStudents.length,
           studentRatio,
           studentCondition,
-          meetsCriteria: studentCondition,
+          isTeacherUnavailable,
+          meetsCriteria,
           totalAvailable: availableTeachers.length + availableStudents.length
         });
       });
     });
-    
+
     const validDates = results.filter(r => r.meetsCriteria);
-    
+
     let mostParticipants = null;
     let earliest = null;
-    
+
     if (validDates.length > 0) {
-      mostParticipants = validDates.reduce((max, curr) => 
+      mostParticipants = validDates.reduce((max, curr) =>
         curr.totalAvailable > max.totalAvailable ? curr : max
       );
-      
+
       earliest = validDates.reduce((min, curr) => {
         const currDate = new Date(curr.date + 'T' + curr.slot);
         const minDate = new Date(min.date + 'T' + min.slot);
         return currDate < minDate ? curr : min;
       });
     }
-    
+
     return {
       allResults: results,
       validDates,
@@ -394,6 +415,88 @@ export default function Home() {
       grouped[g] = allUsers.filter(u => u.role === 'student' && u.grade === g);
     });
     return grouped;
+  };
+
+  // 先生が×（参加不可）と回答した全時間帯を取得
+  const getTeacherUnavailableSlots = () => {
+    const unavailableSlots = {};
+
+    events.forEach(event => {
+      Object.values(event.responses).forEach(response => {
+        if (response.userRole === 'teacher') {
+          const teacherId = response.visitorId;
+          if (!unavailableSlots[teacherId]) {
+            unavailableSlots[teacherId] = {
+              name: response.userName,
+              slots: new Set()
+            };
+          }
+          // ×（false または undefined）の時間帯を収集
+          Object.entries(response.answers || {}).forEach(([key, value]) => {
+            if (value === false) {
+              unavailableSlots[teacherId].slots.add(key);
+            }
+          });
+        }
+      });
+    });
+
+    return unavailableSlots;
+  };
+
+  // ダブルブッキング（先生の確定日時重複）を検出
+  const detectDoubleBookings = () => {
+    const bookings = [];
+
+    // 各イベントの確定日時を収集
+    events.forEach(event => {
+      const analysis = calculateOptimalDates(event);
+      if (analysis.mostParticipants) {
+        const slot = analysis.mostParticipants;
+        // このイベントで参加可能（○）と回答した先生を取得
+        const responses = Object.values(event.responses);
+        const availableTeachers = responses.filter(r =>
+          r.userRole === 'teacher' && r.answers[slot.key] === true
+        );
+
+        availableTeachers.forEach(teacher => {
+          bookings.push({
+            eventId: event.id,
+            eventName: event.name,
+            teacherId: teacher.visitorId,
+            teacherName: teacher.userName,
+            date: slot.date,
+            time: slot.slot,
+            key: slot.key
+          });
+        });
+      }
+    });
+
+    // 同じ先生・同じ日時で複数イベントがあるものを検出
+    const conflicts = [];
+    const teacherSlotMap = {};
+
+    bookings.forEach(booking => {
+      const mapKey = `${booking.teacherId}_${booking.key}`;
+      if (!teacherSlotMap[mapKey]) {
+        teacherSlotMap[mapKey] = [];
+      }
+      teacherSlotMap[mapKey].push(booking);
+    });
+
+    Object.values(teacherSlotMap).forEach(bookingsAtSlot => {
+      if (bookingsAtSlot.length > 1) {
+        conflicts.push({
+          teacherName: bookingsAtSlot[0].teacherName,
+          date: bookingsAtSlot[0].date,
+          time: bookingsAtSlot[0].time,
+          events: bookingsAtSlot.map(b => b.eventName)
+        });
+      }
+    });
+
+    return conflicts;
   };
 
   const handleDeleteUser = async (userId) => {
@@ -928,7 +1031,27 @@ export default function Home() {
           </div>
           
           <h2 style={styles.sectionTitle}>イベント一覧</h2>
-          
+
+          {/* ダブルブッキング警告 */}
+          {(() => {
+            const conflicts = detectDoubleBookings();
+            if (conflicts.length === 0) return null;
+            return (
+              <div style={styles.conflictWarningBox}>
+                <div style={styles.conflictWarningTitle}>日程重複の検出</div>
+                {conflicts.map((conflict, idx) => (
+                  <div key={idx} style={styles.conflictItem}>
+                    <span style={styles.conflictTeacher}>{conflict.teacherName}</span>
+                    <span style={styles.conflictDetail}>
+                      {formatDate(conflict.date)} {conflict.time}~：
+                      {conflict.events.join('、')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           {events.length === 0 ? (
             <p style={styles.emptyText}>まだイベントがありません</p>
           ) : (
@@ -1569,6 +1692,34 @@ const styles = {
     color: '#999',
     textAlign: 'center',
     padding: '40px',
+  },
+  conflictWarningBox: {
+    background: '#fff8e6',
+    border: '1px solid #f0d58c',
+    borderRadius: '8px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+  },
+  conflictWarningTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#8a6d3b',
+    marginBottom: '8px',
+  },
+  conflictItem: {
+    fontSize: '13px',
+    color: '#666',
+    padding: '4px 0',
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  conflictTeacher: {
+    fontWeight: '600',
+    color: '#8a6d3b',
+  },
+  conflictDetail: {
+    color: '#666',
   },
   eventList: {
     display: 'flex',
