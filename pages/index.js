@@ -12,6 +12,7 @@ export default function Home() {
   const [editingEvent, setEditingEvent] = useState(false);
   const [showMemberList, setShowMemberList] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(null);
 
   const [regName, setRegName] = useState('');
   const [regRole, setRegRole] = useState('student');
@@ -382,6 +383,22 @@ visitorId: currentUser.id,
     return grouped;
   };
 
+  const handleDeleteUser = async (userId) => {
+    const updatedUsers = allUsers.filter(u => u.id !== userId);
+    setAllUsers(updatedUsers);
+
+    // イベントからも該当ユーザーの回答を削除
+    const updatedEvents = events.map(event => {
+      const newResponses = { ...event.responses };
+      delete newResponses[userId];
+      return { ...event, responses: newResponses };
+    });
+    setEvents(updatedEvents);
+
+    await saveToServer(updatedEvents, updatedUsers);
+    setShowUserDeleteConfirm(null);
+  };
+
   if (loading) {
     return (
       <>
@@ -505,28 +522,62 @@ visitorId: currentUser.id,
                 <h3 style={styles.memberSectionTitle}>👨‍🏫 先生（{groupedUsers.teachers.length}人）</h3>
                 <div style={styles.memberGrid}>
                   {groupedUsers.teachers.map(u => (
-                    <div key={u.id} style={styles.memberCard}>
-                      {u.name}
+                    <div key={u.id} style={styles.memberCardWithDelete}>
+                      <span>{u.name}</span>
+                      <button
+                        onClick={() => setShowUserDeleteConfirm(u)}
+                        style={styles.memberDeleteButton}
+                        title="このユーザーを削除"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            
+
             {grades.map(g => (
               groupedUsers[g].length > 0 && (
                 <div key={g} style={styles.memberSection}>
                   <h3 style={styles.memberSectionTitle}>🎓 {g}（{groupedUsers[g].length}人）</h3>
                   <div style={styles.memberGrid}>
                     {groupedUsers[g].map(u => (
-                      <div key={u.id} style={styles.memberCard}>
-                        {u.name}
+                      <div key={u.id} style={styles.memberCardWithDelete}>
+                        <span>{u.name}</span>
+                        <button
+                          onClick={() => setShowUserDeleteConfirm(u)}
+                          style={styles.memberDeleteButton}
+                          title="このユーザーを削除"
+                        >
+                          ×
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
               )
             ))}
+
+            {showUserDeleteConfirm && (
+              <div style={styles.modalOverlay}>
+                <div style={styles.modal}>
+                  <h3 style={styles.modalTitle}>ユーザーを削除しますか？</h3>
+                  <p style={styles.modalText}>
+                    「{showUserDeleteConfirm.name}」を削除します。
+                    このユーザーのイベント回答もすべて削除されます。
+                  </p>
+                  <div style={styles.modalButtons}>
+                    <button onClick={() => setShowUserDeleteConfirm(null)} style={styles.secondaryButtonSmall}>
+                      キャンセル
+                    </button>
+                    <button onClick={() => handleDeleteUser(showUserDeleteConfirm.id)} style={styles.deleteButton}>
+                      削除する
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {allUsers.length === 0 && (
               <p style={styles.emptyText}>まだメンバーが登録されていません</p>
@@ -782,8 +833,23 @@ visitorId: currentUser.id,
             )}
             
             {!isTargetUser && (
-              <div style={styles.notTargetBox}>
-                このイベントはあなたの学年（{currentUser.grade}）は対象外です。
+              <div style={styles.notTargetSection}>
+                <div style={styles.notTargetBox}>
+                  このイベントはあなたの学年（{currentUser.grade}）は対象外です。
+                </div>
+                <div style={styles.candidateDatesSection}>
+                  <h3 style={styles.candidateDatesTitle}>候補日一覧</h3>
+                  <div style={styles.candidateDatesGrid}>
+                    {selectedEvent.candidateDates.map(date => (
+                      <div key={date} style={styles.candidateDateCard}>
+                        {formatDate(date)}
+                      </div>
+                    ))}
+                  </div>
+                  <p style={styles.candidateDatesTime}>
+                    時間帯: {selectedEvent.timeSlots[0]} 〜 {selectedEvent.timeSlots[selectedEvent.timeSlots.length - 1]}
+                  </p>
+                </div>
               </div>
             )}
             
@@ -1025,15 +1091,26 @@ function DragSelectForm({ event, currentUser, existingResponse, onSubmit, format
       
       <div style={styles.commentSection}>
         <label style={styles.label}>コメント（任意）</label>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          placeholder="例：この日は午後から参加可能です"
-          style={styles.textarea}
-          rows={2}
-        />
+        <div style={styles.commentInputRow}>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="例：この日は午後から参加可能です"
+            style={styles.textareaFlex}
+            rows={2}
+          />
+          {comment && (
+            <button
+              onClick={() => setComment('')}
+              style={styles.clearCommentButton}
+              title="コメントを削除"
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
-      
+
       <button onClick={handleSubmit} style={styles.primaryButton}>
         回答を保存
       </button>
@@ -1566,6 +1643,40 @@ const styles = {
     color: '#666',
     textAlign: 'center',
   },
+  notTargetSection: {
+    marginBottom: '24px',
+  },
+  candidateDatesSection: {
+    marginTop: '16px',
+    padding: '16px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+  },
+  candidateDatesTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: '12px',
+  },
+  candidateDatesGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '12px',
+  },
+  candidateDateCard: {
+    padding: '8px 12px',
+    background: '#e8f0fe',
+    borderRadius: '6px',
+    fontSize: '14px',
+    color: '#1a73e8',
+    fontWeight: '500',
+  },
+  candidateDatesTime: {
+    fontSize: '13px',
+    color: '#666',
+    margin: 0,
+  },
   responseForm: {
     marginBottom: '24px',
   },
@@ -1666,6 +1777,31 @@ const styles = {
   commentSection: {
     marginTop: '16px',
     marginBottom: '16px',
+  },
+  commentInputRow: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'flex-start',
+  },
+  textareaFlex: {
+    flex: 1,
+    padding: '12px 16px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    resize: 'vertical',
+    outline: 'none',
+    fontFamily: 'inherit',
+  },
+  clearCommentButton: {
+    background: '#ff4757',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    fontWeight: '600',
   },
   responseSection: {
     marginTop: '24px',
@@ -1800,6 +1936,25 @@ const styles = {
     borderRadius: '8px',
     fontSize: '14px',
     color: '#333',
+  },
+  memberCardWithDelete: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 12px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    fontSize: '14px',
+    color: '#333',
+  },
+  memberDeleteButton: {
+    background: 'transparent',
+    border: 'none',
+    color: '#999',
+    cursor: 'pointer',
+    fontSize: '16px',
+    padding: '0 4px',
+    lineHeight: 1,
   },
   modalOverlay: {
     position: 'fixed',
