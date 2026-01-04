@@ -27,8 +27,9 @@ export default function Home() {
   const grades = ['B3', 'B4', 'M1', 'M2', 'D1', 'D2', 'D3'];
   
   const timeSlots = [
-    '09:00', '10:00', '11:00', '12:00', '13:00', 
-    '14:00', '15:00', '16:00', '17:00', '18:00'
+    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+    '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00'
   ];
 
   useEffect(() => {
@@ -633,7 +634,7 @@ visitorId: currentUser.id,
               <div style={styles.formGroup}>
                 <label style={styles.label}>時間帯</label>
                 <div style={styles.timePreview}>
-                  9:00〜18:00（1時間刻み・固定）
+                  9:00〜18:00（30分刻み・固定）
                 </div>
               </div>
               
