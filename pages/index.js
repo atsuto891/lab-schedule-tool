@@ -30,7 +30,7 @@ export default function Home() {
   const timeSlots = [
     '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
     '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
-    '15:00', '15:30', '16:00', '16:30', '17:00', '17:30', '18:00'
+    '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
   ];
 
   useEffect(() => {
@@ -258,7 +258,7 @@ export default function Home() {
           responses: {
             ...event.responses,
             [currentUser.id]: {
-visitorId: currentUser.id,
+              visitorId: currentUser.id,
               userName: currentUser.name,
               userRole: currentUser.role,
               userGrade: currentUser.grade,
@@ -267,6 +267,19 @@ visitorId: currentUser.id,
             }
           }
         };
+      }
+      return event;
+    });
+    await saveEvents(updatedEvents);
+    setSelectedEvent(updatedEvents.find(e => e.id === eventId));
+  };
+
+  const deleteResponse = async (eventId) => {
+    const updatedEvents = events.map(event => {
+      if (event.id === eventId) {
+        const newResponses = { ...event.responses };
+        delete newResponses[currentUser.id];
+        return { ...event, responses: newResponses };
       }
       return event;
     });
@@ -826,6 +839,7 @@ visitorId: currentUser.id,
                 currentUser={currentUser}
                 existingResponse={userResponse}
                 onSubmit={submitResponse}
+                onDelete={deleteResponse}
                 formatDateShort={formatDateShort}
                 timeSlots={timeSlots}
                 analysisResults={analysis.allResults}
@@ -972,19 +986,20 @@ visitorId: currentUser.id,
 }
 
 // Drag Select Response Form Component
-function DragSelectForm({ event, currentUser, existingResponse, onSubmit, formatDateShort, timeSlots, analysisResults }) {
+function DragSelectForm({ event, currentUser, existingResponse, onSubmit, onDelete, formatDateShort, timeSlots, analysisResults }) {
   const [answers, setAnswers] = useState(existingResponse?.answers || {});
   const [comment, setComment] = useState(existingResponse?.comment || '');
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(null);
   const [draggedCells, setDraggedCells] = useState(new Set());
+  const [showDeleteResponseConfirm, setShowDeleteResponseConfirm] = useState(false);
   const tableRef = useRef(null);
-  
+
   const teacherCountMap = {};
   analysisResults?.forEach(r => {
     teacherCountMap[r.key] = r.availableTeachers;
   });
-  
+
   const getTeacherIndicator = (key) => {
     const count = teacherCountMap[key] || 0;
     if (count === 3) return { emoji: '👨‍🏫³', style: styles.teacherFull };
@@ -992,7 +1007,7 @@ function DragSelectForm({ event, currentUser, existingResponse, onSubmit, format
     if (count === 1) return { emoji: '👨‍🏫¹', style: styles.teacherOne };
     return { emoji: '', style: {} };
   };
-  
+
   const handleMouseDown = (key, currentValue) => {
     setIsDragging(true);
     const newValue = !currentValue;
@@ -1000,34 +1015,42 @@ function DragSelectForm({ event, currentUser, existingResponse, onSubmit, format
     setDraggedCells(new Set([key]));
     setAnswers(prev => ({ ...prev, [key]: newValue }));
   };
-  
+
   const handleMouseEnter = (key) => {
     if (isDragging && dragValue !== null) {
       setDraggedCells(prev => new Set([...prev, key]));
       setAnswers(prev => ({ ...prev, [key]: dragValue }));
     }
   };
-  
+
   const handleMouseUp = () => {
     setIsDragging(false);
     setDragValue(null);
     setDraggedCells(new Set());
   };
-  
+
   useEffect(() => {
     const handleGlobalMouseUp = () => {
       if (isDragging) {
         handleMouseUp();
       }
     };
-    
+
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isDragging]);
-  
+
   const handleSubmit = () => {
     onSubmit(event.id, answers, comment);
     alert('回答を保存しました');
+  };
+
+  const handleDelete = () => {
+    onDelete(event.id);
+    setShowDeleteResponseConfirm(false);
+    setAnswers({});
+    setComment('');
+    alert('回答を削除しました');
   };
   
   return (
@@ -1056,7 +1079,7 @@ function DragSelectForm({ event, currentUser, existingResponse, onSubmit, format
           <tbody>
             {timeSlots.map(slot => (
               <tr key={slot}>
-                <td style={styles.timeHeaderCell}>{slot}</td>
+                <td style={styles.timeHeaderCell}>{slot}~</td>
                 {event.candidateDates.map(date => {
                   const key = `${date}_${slot}`;
                   const isAvailable = answers[key];
@@ -1111,9 +1134,36 @@ function DragSelectForm({ event, currentUser, existingResponse, onSubmit, format
         </div>
       </div>
 
-      <button onClick={handleSubmit} style={styles.primaryButton}>
-        回答を保存
-      </button>
+      <div style={styles.responseButtonRow}>
+        <button onClick={handleSubmit} style={styles.primaryButton}>
+          回答を保存
+        </button>
+        {existingResponse && (
+          <button
+            onClick={() => setShowDeleteResponseConfirm(true)}
+            style={styles.deleteResponseButton}
+          >
+            回答を削除
+          </button>
+        )}
+      </div>
+
+      {showDeleteResponseConfirm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>回答を削除しますか？</h3>
+            <p style={styles.modalText}>この操作は取り消せません。</p>
+            <div style={styles.modalButtons}>
+              <button onClick={() => setShowDeleteResponseConfirm(false)} style={styles.secondaryButtonSmall}>
+                キャンセル
+              </button>
+              <button onClick={handleDelete} style={styles.deleteButton}>
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1802,6 +1852,22 @@ const styles = {
     cursor: 'pointer',
     fontSize: '16px',
     fontWeight: '600',
+  },
+  responseButtonRow: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  deleteResponseButton: {
+    padding: '14px 24px',
+    background: 'white',
+    color: '#ff4757',
+    border: '2px solid #ff4757',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    cursor: 'pointer',
   },
   responseSection: {
     marginTop: '24px',
