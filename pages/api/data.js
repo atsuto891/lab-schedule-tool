@@ -5,19 +5,23 @@ export default async function handler(req, res) {
     try {
       const events = await kv.get('events') || [];
       const allUsers = await kv.get('allUsers') || [];
-      res.status(200).json({ events, allUsers });
+      const activityLogs = await kv.get('activityLogs') || [];
+      res.status(200).json({ events, allUsers, activityLogs });
     } catch (error) {
       console.error('Error fetching data:', error);
       res.status(500).json({ error: 'Failed to fetch data' });
     }
   } else if (req.method === 'POST') {
     try {
-      const { events, allUsers } = req.body;
+      const { events, allUsers, activityLogs } = req.body;
       if (events !== undefined) {
         await kv.set('events', events);
       }
       if (allUsers !== undefined) {
         await kv.set('allUsers', allUsers);
+      }
+      if (activityLogs !== undefined) {
+        await kv.set('activityLogs', activityLogs);
       }
       res.status(200).json({ success: true });
     } catch (error) {
