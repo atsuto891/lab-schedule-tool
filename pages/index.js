@@ -5,6 +5,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [events, setEvents] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const [currentView, setCurrentView] = useState('home');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,8 +29,8 @@ export default function Home() {
   const grades = ['B3', 'B4', 'M1', 'M2', 'D1', 'D2', 'D3'];
   
   const timeSlots = [
-    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+    '10:00', '10:30', '11:00', '11:30',
+    '13:00', '13:30', '14:00', '14:30',
     '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
   ];
 
@@ -44,31 +45,47 @@ export default function Home() {
       if (savedUser) {
         setCurrentUser(JSON.parse(savedUser));
       }
-      
+
       // Load shared data from server
       const response = await fetch('/api/data');
       const data = await response.json();
       setEvents(data.events || []);
       setAllUsers(data.allUsers || []);
+      setActivityLogs(data.activityLogs || []);
     } catch (error) {
       console.log('Error loading data:', error);
     }
     setLoading(false);
   };
 
-  const saveToServer = async (newEvents, newAllUsers) => {
+  const saveToServer = async (newEvents, newAllUsers, newLogs) => {
     try {
       await fetch('/api/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           events: newEvents !== undefined ? newEvents : events,
-          allUsers: newAllUsers !== undefined ? newAllUsers : allUsers
+          allUsers: newAllUsers !== undefined ? newAllUsers : allUsers,
+          activityLogs: newLogs !== undefined ? newLogs : activityLogs
         }),
       });
     } catch (error) {
       console.error('Error saving to server:', error);
     }
+  };
+
+  const addLog = async (action, detail) => {
+    const newLog = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      userId: currentUser?.id,
+      userName: currentUser?.name || '不明',
+      action,
+      detail
+    };
+    const updatedLogs = [newLog, ...activityLogs].slice(0, 100); // 最新100件まで保持
+    setActivityLogs(updatedLogs);
+    return updatedLogs;
   };
 
   const saveUser = async (user) => {
@@ -195,7 +212,10 @@ export default function Home() {
       createdAt: new Date().toISOString()
     };
 
-    await saveEvents([...events, newEvent]);
+    const updatedEvents = [...events, newEvent];
+    const newLogs = await addLog('イベント作成', `「${eventName.trim()}」を作成`);
+    setEvents(updatedEvents);
+    await saveToServer(updatedEvents, undefined, newLogs);
     resetEventForm();
     setCurrentView('home');
   };
@@ -239,7 +259,9 @@ export default function Home() {
       return event;
     });
 
-    await saveEvents(updatedEvents);
+    const newLogs = await addLog('イベント編集', `「${eventName.trim()}」を編集`);
+    setEvents(updatedEvents);
+    await saveToServer(updatedEvents, undefined, newLogs);
     setSelectedEvent(updatedEvents.find(e => e.id === selectedEvent.id));
     setEditingEvent(false);
     resetEventForm();
@@ -251,6 +273,7 @@ export default function Home() {
   };
 
   const submitResponse = async (eventId, responses, comment) => {
+    const targetEvent = events.find(e => e.id === eventId);
     const updatedEvents = events.map(event => {
       if (event.id === eventId) {
         return {
@@ -270,11 +293,14 @@ export default function Home() {
       }
       return event;
     });
-    await saveEvents(updatedEvents);
+    const newLogs = await addLog('回答登録', `「${targetEvent?.name}」に回答`);
+    setEvents(updatedEvents);
+    await saveToServer(updatedEvents, undefined, newLogs);
     setSelectedEvent(updatedEvents.find(e => e.id === eventId));
   };
 
   const deleteResponse = async (eventId) => {
+    const targetEvent = events.find(e => e.id === eventId);
     const updatedEvents = events.map(event => {
       if (event.id === eventId) {
         const newResponses = { ...event.responses };
@@ -283,7 +309,9 @@ export default function Home() {
       }
       return event;
     });
-    await saveEvents(updatedEvents);
+    const newLogs = await addLog('回答削除', `「${targetEvent?.name}」の回答を削除`);
+    setEvents(updatedEvents);
+    await saveToServer(updatedEvents, undefined, newLogs);
     setSelectedEvent(updatedEvents.find(e => e.id === eventId));
   };
 
@@ -400,8 +428,11 @@ export default function Home() {
   };
 
   const handleDeleteEvent = async () => {
+    const eventName = selectedEvent.name;
     const updatedEvents = events.filter(e => e.id !== selectedEvent.id);
-    await saveEvents(updatedEvents);
+    const newLogs = await addLog('イベント削除', `「${eventName}」を削除`);
+    setEvents(updatedEvents);
+    await saveToServer(updatedEvents, undefined, newLogs);
     setShowDeleteConfirm(false);
     setCurrentView('home');
     setSelectedEvent(null);
@@ -500,6 +531,7 @@ export default function Home() {
   };
 
   const handleDeleteUser = async (userId) => {
+    const deletedUser = allUsers.find(u => u.id === userId);
     const updatedUsers = allUsers.filter(u => u.id !== userId);
     setAllUsers(updatedUsers);
 
@@ -511,7 +543,8 @@ export default function Home() {
     });
     setEvents(updatedEvents);
 
-    await saveToServer(updatedEvents, updatedUsers);
+    const newLogs = await addLog('ユーザー削除', `「${deletedUser?.name}」を削除`);
+    await saveToServer(updatedEvents, updatedUsers, newLogs);
     setShowUserDeleteConfirm(null);
   };
 
@@ -801,7 +834,7 @@ export default function Home() {
               <div style={styles.formGroup}>
                 <label style={styles.label}>時間帯</label>
                 <div style={styles.timePreview}>
-                  9:00〜18:00（30分刻み・固定）
+                  10:00〜18:00（30分刻み・昼休み除く）
                 </div>
               </div>
               
@@ -1100,6 +1133,31 @@ export default function Home() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* 操作履歴 */}
+          <h2 style={styles.sectionTitle}>操作履歴</h2>
+          {activityLogs.length === 0 ? (
+            <p style={styles.emptyText}>まだ操作履歴がありません</p>
+          ) : (
+            <div style={styles.logList}>
+              {activityLogs.slice(0, 20).map(log => (
+                <div key={log.id} style={styles.logItem}>
+                  <div style={styles.logHeader}>
+                    <span style={styles.logAction}>{log.action}</span>
+                    <span style={styles.logTime}>
+                      {new Date(log.timestamp).toLocaleString('ja-JP', {
+                        month: 'numeric', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <div style={styles.logDetail}>
+                    {log.userName}：{log.detail}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1720,6 +1778,39 @@ const styles = {
   },
   conflictDetail: {
     color: '#666',
+  },
+  logList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  logItem: {
+    padding: '10px 12px',
+    background: '#f8f9fa',
+    borderRadius: '8px',
+    borderLeft: '3px solid #ddd',
+  },
+  logHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '4px',
+  },
+  logAction: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#1a73e8',
+    background: '#e8f0fe',
+    padding: '2px 8px',
+    borderRadius: '4px',
+  },
+  logTime: {
+    fontSize: '12px',
+    color: '#999',
+  },
+  logDetail: {
+    fontSize: '13px',
+    color: '#555',
   },
   eventList: {
     display: 'flex',
