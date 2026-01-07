@@ -14,6 +14,7 @@ export default function Home() {
   const [showMemberList, setShowMemberList] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(null);
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   const [regName, setRegName] = useState('');
   const [regRole, setRegRole] = useState('student');
@@ -123,6 +124,20 @@ export default function Home() {
     await saveUser(user);
     setCurrentView('home');
   };
+
+  const handleGuestLogin = () => {
+    const guestUser = {
+      id: 'guest_' + Date.now().toString(),
+      name: 'ゲスト',
+      role: 'guest',
+      grade: null
+    };
+    localStorage.setItem('currentUser', JSON.stringify(guestUser));
+    setCurrentUser(guestUser);
+    setCurrentView('home');
+  };
+
+  const isGuest = currentUser?.role === 'guest';
 
   const handleUpdateProfile = async () => {
     if (!regName.trim()) {
@@ -636,7 +651,7 @@ export default function Home() {
               >
                 {editingProfile ? '更新する' : '登録する'}
               </button>
-              
+
               {editingProfile && (
                 <button
                   onClick={() => setEditingProfile(false)}
@@ -644,6 +659,23 @@ export default function Home() {
                 >
                   キャンセル
                 </button>
+              )}
+
+              {!editingProfile && (
+                <div style={styles.guestSection}>
+                  <div style={styles.divider}>
+                    <span style={styles.dividerText}>または</span>
+                  </div>
+                  <button
+                    onClick={handleGuestLogin}
+                    style={styles.guestButton}
+                  >
+                    👁 閲覧のみ（ゲスト）
+                  </button>
+                  <p style={styles.guestNote}>
+                    ゲストは日程の閲覧のみ可能です
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -671,15 +703,17 @@ export default function Home() {
                 <h3 style={styles.memberSectionTitle}>👨‍🏫 先生（{groupedUsers.teachers.length}人）</h3>
                 <div style={styles.memberGrid}>
                   {groupedUsers.teachers.map(u => (
-                    <div key={u.id} style={styles.memberCardWithDelete}>
+                    <div key={u.id} style={isGuest ? styles.memberCard : styles.memberCardWithDelete}>
                       <span>{u.name}</span>
-                      <button
-                        onClick={() => setShowUserDeleteConfirm(u)}
-                        style={styles.memberDeleteButton}
-                        title="このユーザーを削除"
-                      >
-                        ×
-                      </button>
+                      {!isGuest && (
+                        <button
+                          onClick={() => setShowUserDeleteConfirm(u)}
+                          style={styles.memberDeleteButton}
+                          title="このユーザーを削除"
+                        >
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -692,15 +726,17 @@ export default function Home() {
                   <h3 style={styles.memberSectionTitle}>🎓 {g}（{groupedUsers[g].length}人）</h3>
                   <div style={styles.memberGrid}>
                     {groupedUsers[g].map(u => (
-                      <div key={u.id} style={styles.memberCardWithDelete}>
+                      <div key={u.id} style={isGuest ? styles.memberCard : styles.memberCardWithDelete}>
                         <span>{u.name}</span>
-                        <button
-                          onClick={() => setShowUserDeleteConfirm(u)}
-                          style={styles.memberDeleteButton}
-                          title="このユーザーを削除"
-                        >
-                          ×
-                        </button>
+                        {!isGuest && (
+                          <button
+                            onClick={() => setShowUserDeleteConfirm(u)}
+                            style={styles.memberDeleteButton}
+                            title="このユーザーを削除"
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -868,8 +904,8 @@ export default function Home() {
   if (currentView === 'eventDetail' && selectedEvent) {
     const analysis = calculateOptimalDates(selectedEvent);
     const userResponse = selectedEvent.responses[currentUser.id];
-    const isTargetUser = currentUser.role === 'teacher' || 
-      selectedEvent.targetGrades.includes(currentUser.grade);
+    const isTargetUser = !isGuest && (currentUser.role === 'teacher' ||
+      selectedEvent.targetGrades.includes(currentUser.grade));
     const deadlineInfo = formatDeadline(selectedEvent.deadline);
     
     return (
@@ -897,14 +933,16 @@ export default function Home() {
                   </p>
                 )}
               </div>
-              <div style={styles.headerButtons}>
-                <button onClick={startEditEvent} style={styles.editButton}>
-                  編集
-                </button>
-                <button onClick={() => setShowDeleteConfirm(true)} style={styles.deleteButton}>
-                  削除
-                </button>
-              </div>
+              {!isGuest && (
+                <div style={styles.headerButtons}>
+                  <button onClick={startEditEvent} style={styles.editButton}>
+                    編集
+                  </button>
+                  <button onClick={() => setShowDeleteConfirm(true)} style={styles.deleteButton}>
+                    削除
+                  </button>
+                </div>
+              )}
             </div>
             
             {showDeleteConfirm && (
@@ -1041,20 +1079,39 @@ export default function Home() {
           
           <div style={styles.userInfo}>
             <span>
-              {currentUser.name}（{currentUser.role === 'teacher' ? '先生' : currentUser.grade}）
+              {isGuest ? (
+                <span style={styles.guestBadge}>👁 ゲスト（閲覧のみ）</span>
+              ) : (
+                `${currentUser.name}（${currentUser.role === 'teacher' ? '先生' : currentUser.grade}）`
+              )}
             </span>
-            <button onClick={startEditProfile} style={styles.linkButton}>
-              編集
-            </button>
+            {!isGuest && (
+              <button onClick={startEditProfile} style={styles.linkButton}>
+                編集
+              </button>
+            )}
+            {isGuest && (
+              <button
+                onClick={() => {
+                  localStorage.removeItem('currentUser');
+                  setCurrentUser(null);
+                }}
+                style={styles.linkButton}
+              >
+                ログアウト
+              </button>
+            )}
           </div>
-          
+
           <div style={styles.buttonRow}>
-            <button
-              onClick={() => setCurrentView('createEvent')}
-              style={styles.primaryButton}
-            >
-              ＋ 新規イベント作成
-            </button>
+            {!isGuest && (
+              <button
+                onClick={() => setCurrentView('createEvent')}
+                style={styles.primaryButton}
+              >
+                ＋ 新規イベント作成
+              </button>
+            )}
             <button
               onClick={() => setShowMemberList(true)}
               style={styles.outlineButton}
@@ -1142,7 +1199,7 @@ export default function Home() {
             <p style={styles.emptyText}>まだ操作履歴がありません</p>
           ) : (
             <div style={styles.logList}>
-              {activityLogs.slice(0, 20).map(log => (
+              {activityLogs.slice(0, showAllLogs ? 20 : 3).map(log => (
                 <div key={log.id} style={styles.logItem}>
                   <div style={styles.logHeader}>
                     <span style={styles.logAction}>{log.action}</span>
@@ -1158,6 +1215,14 @@ export default function Home() {
                   </div>
                 </div>
               ))}
+              {activityLogs.length > 3 && (
+                <button
+                  onClick={() => setShowAllLogs(!showAllLogs)}
+                  style={styles.logToggleButton}
+                >
+                  {showAllLogs ? '▲ 閉じる' : `▼ 過去の履歴を表示（残り${Math.min(activityLogs.length - 3, 17)}件）`}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1619,6 +1684,42 @@ const styles = {
     fontWeight: '600',
     cursor: 'pointer',
   },
+  guestSection: {
+    marginTop: '24px',
+    textAlign: 'center',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    margin: '16px 0',
+  },
+  dividerText: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#999',
+    fontSize: '13px',
+    position: 'relative',
+  },
+  guestButton: {
+    width: '100%',
+    padding: '12px 24px',
+    background: '#f5f5f5',
+    color: '#666',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    fontSize: '15px',
+    fontWeight: '500',
+    cursor: 'pointer',
+  },
+  guestNote: {
+    fontSize: '12px',
+    color: '#999',
+    marginTop: '8px',
+  },
+  guestBadge: {
+    color: '#888',
+    fontSize: '14px',
+  },
   outlineButton: {
     padding: '14px 24px',
     background: 'white',
@@ -1811,6 +1912,17 @@ const styles = {
   logDetail: {
     fontSize: '13px',
     color: '#555',
+  },
+  logToggleButton: {
+    width: '100%',
+    padding: '10px',
+    background: 'transparent',
+    border: '1px dashed #ccc',
+    borderRadius: '8px',
+    color: '#666',
+    fontSize: '13px',
+    cursor: 'pointer',
+    marginTop: '4px',
   },
   eventList: {
     display: 'flex',
