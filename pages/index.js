@@ -41,6 +41,7 @@ export default function Home() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
+  const [hidePastEvents, setHidePastEvents] = useState(false);
 
   const [regName, setRegName] = useState('');
   const [regRole, setRegRole] = useState('student');
@@ -1228,7 +1229,18 @@ export default function Home() {
             </button>
           </div>
           
-          <h2 style={styles.sectionTitle}>イベント一覧</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={styles.sectionTitle}>イベント一覧</h2>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#666', cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={hidePastEvents}
+                onChange={(e) => setHidePastEvents(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              終了イベントを非表示
+            </label>
+          </div>
 
           {/* ダブルブッキング警告 */}
           {(() => {
@@ -1258,7 +1270,7 @@ export default function Home() {
                 const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
                 const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
                 return dateB - dateA;
-              }).map(event => {
+              }).filter(event => !hidePastEvents || !isEventPast(event)).map(event => {
                 const analysis = calculateOptimalDates(event);
                 const hasResponded = !!event.responses[currentUser.id];
                 const isTarget = currentUser.role === 'teacher' ||
