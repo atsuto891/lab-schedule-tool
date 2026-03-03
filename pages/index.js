@@ -1,6 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 
+const AVAILABLE_TIMES = (() => {
+  const times = [];
+  for (let h = 8; h <= 20; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      times.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    }
+  }
+  return times;
+})();
+
+const generateTimeSlots = (start, end, interval, excludeLunch) => {
+  const slots = [];
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+  let h = startH, m = startM;
+  while (h < endH || (h === endH && m < endM)) {
+    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    if (!excludeLunch || h < 12 || h >= 13) {
+      slots.push(timeStr);
+    }
+    m += interval;
+    if (m >= 60) { h += Math.floor(m / 60); m = m % 60; }
+  }
+  return slots;
+};
+
 export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
@@ -26,6 +52,10 @@ export default function Home() {
   const [dateEnd, setDateEnd] = useState('');
   const [candidateDates, setCandidateDates] = useState([]);
   const [deadline, setDeadline] = useState('');
+  const [customTimeStart, setCustomTimeStart] = useState('10:00');
+  const [customTimeEnd, setCustomTimeEnd] = useState('18:00');
+  const [customInterval, setCustomInterval] = useState(30);
+  const [excludeLunch, setExcludeLunch] = useState(true);
 
   const grades = ['B3', 'B4', 'M1', 'M2', 'D1', 'D2', 'D3'];
   
@@ -198,6 +228,10 @@ export default function Home() {
     setDateEnd('');
     setCandidateDates([]);
     setDeadline('');
+    setCustomTimeStart('10:00');
+    setCustomTimeEnd('18:00');
+    setCustomInterval(30);
+    setExcludeLunch(true);
   };
 
   const createEvent = async () => {
@@ -219,7 +253,8 @@ export default function Home() {
       name: eventName.trim(),
       targetGrades,
       candidateDates,
-      timeSlots,
+      timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
+      timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch },
       deadline: deadline || null,
       responses: {},
       createdBy: currentUser.id,
@@ -243,6 +278,17 @@ export default function Home() {
     if (selectedEvent.candidateDates.length > 0) {
       setDateStart(selectedEvent.candidateDates[0]);
       setDateEnd(selectedEvent.candidateDates[selectedEvent.candidateDates.length - 1]);
+    }
+    if (selectedEvent.timeConfig) {
+      setCustomTimeStart(selectedEvent.timeConfig.start);
+      setCustomTimeEnd(selectedEvent.timeConfig.end);
+      setCustomInterval(selectedEvent.timeConfig.interval);
+      setExcludeLunch(selectedEvent.timeConfig.excludeLunch);
+    } else {
+      setCustomTimeStart('10:00');
+      setCustomTimeEnd('18:00');
+      setCustomInterval(30);
+      setExcludeLunch(true);
     }
     setEditingEvent(true);
   };
@@ -269,6 +315,8 @@ export default function Home() {
           targetGrades,
           candidateDates,
           deadline: deadline || null,
+          timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
+          timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch },
         };
       }
       return event;
@@ -440,6 +488,13 @@ export default function Home() {
       text: `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`,
       isPast
     };
+  };
+
+  const isEventPast = (event) => {
+    if (!event.candidateDates || event.candidateDates.length === 0) return false;
+    const lastDate = event.candidateDates[event.candidateDates.length - 1];
+    const today = new Date().toISOString().split('T')[0];
+    return lastDate < today;
   };
 
   const handleDeleteEvent = async () => {
@@ -869,8 +924,61 @@ export default function Home() {
               
               <div style={styles.formGroup}>
                 <label style={styles.label}>時間帯</label>
+                <div style={styles.timeSettingsRow}>
+                  <select
+                    value={customTimeStart}
+                    onChange={(e) => setCustomTimeStart(e.target.value)}
+                    style={styles.timeSelect}
+                  >
+                    {AVAILABLE_TIMES.filter(t => t < customTimeEnd).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <span style={styles.dateSeparator}>〜</span>
+                  <select
+                    value={customTimeEnd}
+                    onChange={(e) => setCustomTimeEnd(e.target.value)}
+                    style={styles.timeSelect}
+                  >
+                    {AVAILABLE_TIMES.filter(t => t > customTimeStart).map(t => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.timeOptionsRow}>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={customInterval === 30}
+                      onChange={() => setCustomInterval(30)}
+                      style={styles.radio}
+                    />
+                    30分刻み
+                  </label>
+                  <label style={styles.radioLabel}>
+                    <input
+                      type="radio"
+                      checked={customInterval === 60}
+                      onChange={() => setCustomInterval(60)}
+                      style={styles.radio}
+                    />
+                    1時間刻み
+                  </label>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={excludeLunch}
+                      onChange={(e) => setExcludeLunch(e.target.checked)}
+                      style={styles.checkbox}
+                    />
+                    昼休み除く（12:00-13:00）
+                  </label>
+                </div>
                 <div style={styles.timePreview}>
-                  10:00〜18:00（30分刻み・昼休み除く）
+                  {(() => {
+                    const slots = generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch);
+                    return `${slots.join('、')}（${slots.length}コマ）`;
+                  })()}
                 </div>
               </div>
               
@@ -1015,7 +1123,7 @@ export default function Home() {
                 onSubmit={submitResponse}
                 onDelete={deleteResponse}
                 formatDateShort={formatDateShort}
-                timeSlots={timeSlots}
+                timeSlots={selectedEvent.timeSlots || timeSlots}
                 analysisResults={analysis.allResults}
               />
             )}
@@ -1043,10 +1151,10 @@ export default function Home() {
             
             <div style={styles.responseSection}>
               <h2 style={styles.sectionTitle}>📝 回答一覧</h2>
-              <ResponseTable 
-                event={selectedEvent} 
+              <ResponseTable
+                event={selectedEvent}
                 formatDateShort={formatDateShort}
-                timeSlots={timeSlots}
+                timeSlots={selectedEvent.timeSlots || timeSlots}
                 grades={grades}
               />
             </div>
@@ -1146,13 +1254,18 @@ export default function Home() {
             <p style={styles.emptyText}>まだイベントがありません</p>
           ) : (
             <div style={styles.eventList}>
-              {events.map(event => {
+              {[...events].sort((a, b) => {
+                const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+                const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+                return dateB - dateA;
+              }).map(event => {
                 const analysis = calculateOptimalDates(event);
                 const hasResponded = !!event.responses[currentUser.id];
-                const isTarget = currentUser.role === 'teacher' || 
+                const isTarget = currentUser.role === 'teacher' ||
                   event.targetGrades.includes(currentUser.grade);
                 const deadlineInfo = formatDeadline(event.deadline);
-                
+                const past = isEventPast(event);
+
                 return (
                   <div
                     key={event.id}
@@ -1160,10 +1273,16 @@ export default function Home() {
                       setSelectedEvent(event);
                       setCurrentView('eventDetail');
                     }}
-                    style={styles.eventCard}
+                    style={{
+                      ...styles.eventCard,
+                      ...(past ? { opacity: 0.6 } : {})
+                    }}
                   >
                     <div style={styles.eventHeader}>
-                      <span style={styles.eventName}>{event.name}</span>
+                      <span style={{
+                        ...styles.eventName,
+                        ...(past ? { textDecoration: 'line-through', color: '#999' } : {})
+                      }}>{event.name}</span>
                       {isTarget && (
                         <span style={{
                           ...styles.badge,
@@ -1444,7 +1563,7 @@ function ResponseTable({ event, formatDateShort, timeSlots, grades }) {
         </div>
       </td>
       {event.candidateDates.map(date => (
-        timeSlots.map(slot => {
+        timeSlots.map((slot, slotIdx) => {
           const key = `${date}_${slot}`;
           const isAvailable = r.answers[key];
           return (
@@ -1452,7 +1571,8 @@ function ResponseTable({ event, formatDateShort, timeSlots, grades }) {
               key={key}
               style={{
                 ...styles.responseCell,
-                ...(isAvailable ? styles.cellYes : styles.cellNo)
+                ...(isAvailable ? styles.cellYes : styles.cellNo),
+                ...(slotIdx === 0 ? styles.dateSeparatorLeft : {})
               }}
             >
               {isAvailable ? '○' : '×'}
@@ -1483,11 +1603,14 @@ function ResponseTable({ event, formatDateShort, timeSlots, grades }) {
           <thead>
             <tr>
               <th style={styles.cornerCell}>名前</th>
-              {event.candidateDates.map(date => (
-                <th 
-                  key={date} 
-                  colSpan={timeSlots.length} 
-                  style={styles.dateGroupHeader}
+              {event.candidateDates.map((date, dateIdx) => (
+                <th
+                  key={date}
+                  colSpan={timeSlots.length}
+                  style={{
+                    ...styles.dateGroupHeader,
+                    ...(dateIdx > 0 ? styles.dateSeparatorLeft : {})
+                  }}
                 >
                   {formatDateShort(date)}
                 </th>
@@ -1496,8 +1619,11 @@ function ResponseTable({ event, formatDateShort, timeSlots, grades }) {
             <tr>
               <th style={styles.cornerCell}></th>
               {event.candidateDates.map(date => (
-                timeSlots.map(slot => (
-                  <th key={`${date}_${slot}`} style={styles.timeSubHeader}>
+                timeSlots.map((slot, slotIdx) => (
+                  <th key={`${date}_${slot}`} style={{
+                    ...styles.timeSubHeader,
+                    ...(slotIdx === 0 ? styles.dateSeparatorLeft : {})
+                  }}>
                     {slot.slice(0, 2)}
                   </th>
                 ))
@@ -2410,5 +2536,38 @@ const styles = {
     display: 'flex',
     gap: '12px',
     justifyContent: 'flex-end',
+  },
+  timeSettingsRow: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  timeSelect: {
+    padding: '10px 12px',
+    border: '2px solid #e0e0e0',
+    borderRadius: '8px',
+    fontSize: '14px',
+    background: 'white',
+  },
+  timeOptionsRow: {
+    display: 'flex',
+    gap: '16px',
+    flexWrap: 'wrap',
+    marginTop: '8px',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+  },
+  dateSeparatorLeft: {
+    borderLeft: '2.5px solid #999',
   },
 };
