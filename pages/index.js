@@ -58,6 +58,13 @@ export default function Home() {
   const [customInterval, setCustomInterval] = useState(30);
   const [excludeLunch, setExcludeLunch] = useState(true);
   const [excludeWeekends, setExcludeWeekends] = useState(true);
+  const [criteria, setCriteria] = useState({
+    type: 'ratio',
+    studentThreshold: 0.8,
+    studentMinCount: 1,
+    requireTeacher: false,
+    teacherMinCount: 1,
+  });
 
   const grades = ['B3', 'B4', 'M1', 'M2', 'D1', 'D2', 'D3'];
   
@@ -237,6 +244,8 @@ export default function Home() {
     setCustomTimeEnd('18:00');
     setCustomInterval(30);
     setExcludeLunch(true);
+    setExcludeWeekends(true);
+    setCriteria({ type: 'ratio', studentThreshold: 0.8, studentMinCount: 1, requireTeacher: false, teacherMinCount: 1 });
   };
 
   const createEvent = async () => {
@@ -260,6 +269,7 @@ export default function Home() {
       candidateDates,
       timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
       timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch, excludeWeekends },
+      criteria,
       deadline: deadline || null,
       responses: {},
       createdBy: currentUser.id,
@@ -297,6 +307,7 @@ export default function Home() {
       setExcludeLunch(true);
       setExcludeWeekends(true);
     }
+    setCriteria(selectedEvent.criteria || { type: 'ratio', studentThreshold: 0.8, studentMinCount: 1, requireTeacher: false, teacherMinCount: 1 });
     setEditingEvent(true);
   };
 
@@ -324,6 +335,7 @@ export default function Home() {
           deadline: deadline || null,
           timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
           timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch, excludeWeekends },
+          criteria,
         };
       }
       return event;
@@ -421,10 +433,13 @@ export default function Home() {
         const studentRatio = targetStudents.length > 0
           ? availableStudents.length / targetStudents.length
           : 0;
-        const studentCondition = studentRatio >= 0.8;
 
-        // 先生が×の時間帯は候補から除外
-        const meetsCriteria = studentCondition && !isTeacherUnavailable;
+        const cr = event.criteria || { type: 'ratio', studentThreshold: 0.8, requireTeacher: false, teacherMinCount: 1, studentMinCount: 1 };
+        const studentCondition = cr.type === 'ratio'
+          ? studentRatio >= cr.studentThreshold
+          : availableStudents.length >= cr.studentMinCount;
+        const teacherCondition = !cr.requireTeacher || availableTeachers.length >= (cr.teacherMinCount || 1);
+        const meetsCriteria = studentCondition && teacherCondition && (!cr.requireTeacher || !isTeacherUnavailable);
 
         results.push({
           date,
@@ -928,7 +943,73 @@ export default function Home() {
                 />
                 <p style={styles.hintSmall}>※締切後も回答可能です</p>
               </div>
-              
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>開催可能条件</label>
+                <div style={{ background: '#f8f9fa', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>学生条件</span>
+                    <div style={{ display: 'flex', gap: '12px', marginTop: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <label style={styles.radioLabel}>
+                        <input type="radio" checked={criteria.type === 'ratio'} onChange={() => setCriteria({ ...criteria, type: 'ratio' })} style={styles.radio} />
+                        割合
+                      </label>
+                      <label style={styles.radioLabel}>
+                        <input type="radio" checked={criteria.type === 'count'} onChange={() => setCriteria({ ...criteria, type: 'count' })} style={styles.radio} />
+                        人数
+                      </label>
+                      {criteria.type === 'ratio' ? (
+                        <select
+                          value={criteria.studentThreshold}
+                          onChange={(e) => setCriteria({ ...criteria, studentThreshold: parseFloat(e.target.value) })}
+                          style={{ ...styles.dateInput, width: 'auto', minWidth: '80px' }}
+                        >
+                          <option value={0.6}>60%以上</option>
+                          <option value={0.7}>70%以上</option>
+                          <option value={0.8}>80%以上</option>
+                          <option value={0.9}>90%以上</option>
+                          <option value={1.0}>100%</option>
+                        </select>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            value={criteria.studentMinCount}
+                            onChange={(e) => setCriteria({ ...criteria, studentMinCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                            style={{ ...styles.dateInput, width: '60px', textAlign: 'center' }}
+                          />
+                          <span style={{ fontSize: '13px', color: '#555' }}>人以上</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ borderTop: '1px solid #e0e0e0', paddingTop: '10px' }}>
+                    <label style={{ ...styles.checkboxLabel, fontWeight: 'bold', fontSize: '13px', color: '#555' }}>
+                      <input
+                        type="checkbox"
+                        checked={criteria.requireTeacher}
+                        onChange={(e) => setCriteria({ ...criteria, requireTeacher: e.target.checked })}
+                        style={styles.checkbox}
+                      />
+                      先生の参加を条件にする
+                    </label>
+                    {criteria.requireTeacher && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', marginLeft: '24px' }}>
+                        <input
+                          type="number"
+                          min="1"
+                          value={criteria.teacherMinCount}
+                          onChange={(e) => setCriteria({ ...criteria, teacherMinCount: Math.max(1, parseInt(e.target.value) || 1) })}
+                          style={{ ...styles.dateInput, width: '60px', textAlign: 'center' }}
+                        />
+                        <span style={{ fontSize: '13px', color: '#555' }}>人以上</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div style={styles.formGroup}>
                 <label style={styles.label}>時間帯</label>
                 <div style={styles.timeSettingsRow}>
@@ -1105,16 +1186,27 @@ export default function Home() {
             
             <div style={styles.resultSection}>
               <h2 style={styles.sectionTitle}>📊 判定結果</h2>
+              {(() => {
+                const cr = selectedEvent.criteria || { type: 'ratio', studentThreshold: 0.8, requireTeacher: false, teacherMinCount: 1, studentMinCount: 1 };
+                const condParts = [];
+                if (cr.type === 'ratio') {
+                  condParts.push(`学生${Math.round(cr.studentThreshold * 100)}%以上`);
+                } else {
+                  condParts.push(`学生${cr.studentMinCount}人以上`);
+                }
+                if (cr.requireTeacher) {
+                  condParts.push(`先生${cr.teacherMinCount || 1}人以上`);
+                }
+                return (
+                  <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px 0' }}>
+                    条件: {condParts.join(' かつ ')}
+                  </p>
+                );
+              })()}
               <p style={styles.statusText}>
-                回答状況: 先生 {analysis.teacherCount}/3人, 
+                回答状況: 先生 {analysis.teacherCount}人,
                 対象学生 {analysis.studentCount}人
               </p>
-              
-              {analysis.teacherCount < 3 && (
-                <div style={styles.infoBox}>
-                  ℹ️ 先生の回答: {analysis.teacherCount}/3人
-                </div>
-              )}
               
               {analysis.validDates.length > 0 ? (
                 <div style={styles.resultBox}>
@@ -1143,7 +1235,21 @@ export default function Home() {
                 <div style={styles.noResultBox}>
                   条件を満たす日程がまだありません。
                   <br />
-                  <small>（対象学生8割以上の参加が必要）</small>
+                  <small>
+                    {(() => {
+                      const cr = selectedEvent.criteria || { type: 'ratio', studentThreshold: 0.8, requireTeacher: false, teacherMinCount: 1, studentMinCount: 1 };
+                      const parts = [];
+                      if (cr.type === 'ratio') {
+                        parts.push(`対象学生${Math.round(cr.studentThreshold * 100)}%以上の参加`);
+                      } else {
+                        parts.push(`学生${cr.studentMinCount}人以上の参加`);
+                      }
+                      if (cr.requireTeacher) {
+                        parts.push(`先生${cr.teacherMinCount || 1}人以上の参加`);
+                      }
+                      return `（${parts.join(' + ')}が必要）`;
+                    })()}
+                  </small>
                 </div>
               )}
             </div>
