@@ -57,6 +57,7 @@ export default function Home() {
   const [customTimeEnd, setCustomTimeEnd] = useState('18:00');
   const [customInterval, setCustomInterval] = useState(30);
   const [excludeLunch, setExcludeLunch] = useState(true);
+  const [excludeWeekends, setExcludeWeekends] = useState(true);
 
   const grades = ['B3', 'B4', 'M1', 'M2', 'D1', 'D2', 'D3'];
   
@@ -207,7 +208,10 @@ export default function Home() {
     const current = new Date(start);
     
     while (current <= end) {
-      dates.push(current.toISOString().split('T')[0]);
+      const day = current.getDay();
+      if (!excludeWeekends || (day !== 0 && day !== 6)) {
+        dates.push(current.toISOString().split('T')[0]);
+      }
       current.setDate(current.getDate() + 1);
     }
     
@@ -255,7 +259,7 @@ export default function Home() {
       targetGrades,
       candidateDates,
       timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
-      timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch },
+      timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch, excludeWeekends },
       deadline: deadline || null,
       responses: {},
       createdBy: currentUser.id,
@@ -285,11 +289,13 @@ export default function Home() {
       setCustomTimeEnd(selectedEvent.timeConfig.end);
       setCustomInterval(selectedEvent.timeConfig.interval);
       setExcludeLunch(selectedEvent.timeConfig.excludeLunch);
+      setExcludeWeekends(selectedEvent.timeConfig.excludeWeekends !== undefined ? selectedEvent.timeConfig.excludeWeekends : true);
     } else {
       setCustomTimeStart('10:00');
       setCustomTimeEnd('18:00');
       setCustomInterval(30);
       setExcludeLunch(true);
+      setExcludeWeekends(true);
     }
     setEditingEvent(true);
   };
@@ -317,7 +323,7 @@ export default function Home() {
           candidateDates,
           deadline: deadline || null,
           timeSlots: generateTimeSlots(customTimeStart, customTimeEnd, customInterval, excludeLunch),
-          timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch },
+          timeConfig: { start: customTimeStart, end: customTimeEnd, interval: customInterval, excludeLunch, excludeWeekends },
         };
       }
       return event;
@@ -973,6 +979,32 @@ export default function Home() {
                       style={styles.checkbox}
                     />
                     昼休み除く（12:00-13:00）
+                  </label>
+                  <label style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={excludeWeekends}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setExcludeWeekends(checked);
+                        if (dateStart && dateEnd) {
+                          const start = new Date(dateStart);
+                          const end = new Date(dateEnd);
+                          const dates = [];
+                          const current = new Date(start);
+                          while (current <= end) {
+                            const day = current.getDay();
+                            if (!checked || (day !== 0 && day !== 6)) {
+                              dates.push(current.toISOString().split('T')[0]);
+                            }
+                            current.setDate(current.getDate() + 1);
+                          }
+                          setCandidateDates(dates);
+                        }
+                      }}
+                      style={styles.checkbox}
+                    />
+                    土日除く
                   </label>
                 </div>
                 <div style={styles.timePreview}>
